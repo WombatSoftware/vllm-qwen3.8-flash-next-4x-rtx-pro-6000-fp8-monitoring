@@ -5,7 +5,8 @@
 # The engine flags are the vLLM recipe's rendered command for this exact
 # configuration, unchanged:
 #   https://recipes.vllm.ai/Qwen/Qwen3.8-Flash-Next?hardware=rtx_pro_6000_4x&variant=fp8&features=tool_calling%2Creasoning%2Cspec_decoding
-# Only --served-model-name, --host and --port are added. Nothing here has been
+# Only --served-model-name, --host, --port and --chat-template (the vendored
+# Qwen-Sharp v22.5.0 template, as in the single-GPU recipe) are added. Nothing here has been
 # booted or benchmarked on this hardware yet (README "Status"). If you change a
 # flag, run the sweep through ./scripts/benchmark.sh: an unguarded sweep on a
 # shared engine is uninterpretable.
@@ -67,6 +68,7 @@ services:
       - ${VLLM_CACHE_DIR:-~/.cache/vllm}:/root/.cache/vllm
       - ${TORCH_CACHE_DIR:-~/.cache/torch}:/root/.cache/torch
       - ${FLASHINFER_CACHE_DIR:-~/.cache/flashinfer}:/root/.cache/flashinfer
+      - ./chat_template.jinja:/opt/vllm/chat_template.jinja:ro
     deploy:
       resources:
         reservations:
@@ -119,6 +121,8 @@ services:
       - qwen3
       - --speculative-config
       - '{"method":"mtp","num_speculative_tokens":3}'
+      - --chat-template
+      - /opt/vllm/chat_template.jinja
 
     # ---------------------------------------------------------------------
     # What each flag is for (recipe values; none re-measured here yet)
@@ -159,8 +163,15 @@ services:
     #   active: an engine that lost this flag still boots and still answers.
     #
     # --tool-call-parser qwen3_coder / --reasoning-parser qwen3
-    #   The recipe's tool_calling and reasoning features; the checkpoint's own
-    #   chat template is used.
+    #   The recipe's tool_calling and reasoning features.
+    #
+    # --chat-template /opt/vllm/chat_template.jinja
+    #   Qwen-Sharp v22.5.0, vendored verbatim (NOTICE, scripts/
+    #   verify-chat-template.sh), instead of the checkpoint's template: per-
+    #   request thinking / reasoning_effort / tool-output truncation via
+    #   chat_template_kwargs. Its default tool_call_format "xml" renders
+    #   <tool_call><function=..><parameter=..> blocks, which is the format
+    #   qwen3_coder parses. Do not switch clients to tool_call_format "json".
     #
     # Keep --disable-log-stats OUT: it stops the stat loggers that feed the
     #   vllm:* Prometheus metrics the Grafana dashboard is built on (the Rust

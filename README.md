@@ -31,9 +31,13 @@ model are all in v0.33.0.
 ### Opinionated about what, exactly
 
 - **The official FP8 checkpoint** — `Qwen/Qwen3.8-Flash-Next-FP8`, 172.78 GiB,
-  served as-is with its own chat template.
-- **The recipe's command, verbatim** — only `--served-model-name`, `--host`
-  and `--port` are added.
+  weights served as-is.
+- **The Qwen-Sharp chat template** — the vendored
+  [Qwen-Sharp v22.5.0](https://huggingface.co/peculiar-ragdoll/Qwen-Sharp-Chat-Templates),
+  the same pinned copy as the single-GPU recipe, instead of the checkpoint's
+  template. See [The chat template](#the-chat-template).
+- **The recipe's command otherwise verbatim** — only `--served-model-name`,
+  `--host`, `--port` and `--chat-template` are added.
 - **A pinned release engine** — the bare upstream vLLM v0.33.0 image, pinned
   by digest. The recipe asks for ≥ 0.30.0 and is tuned on nightly; a digest
   pin is preferred over a moving `nightly` tag (see
@@ -133,6 +137,20 @@ Grafana is at <http://127.0.0.1:3000>, Prometheus at <http://127.0.0.1:9090>.
 | KV cache | fp8, plus fp8 for the sparse-attention indexer cache; pool size known after first boot |
 | Monitoring | Prometheus scraping vLLM and a GPU exporter (all four cards), Grafana with a 30-panel dashboard in 8 rows, provisioned |
 
+## The chat template
+
+`chat_template.jinja` is a **verbatim, unmodified copy** of Qwen-Sharp
+v22.5.0, pinned by hash (`./scripts/verify-chat-template.sh` checks it
+against upstream). It gives per-request control through
+`chat_template_kwargs`: `enable_thinking`, `reasoning_effort`
+(`none`…`high`), `preserve_thinking`, `auto_disable_thinking_with_tools`,
+`max_tool_response_chars` and more.
+
+Its default `tool_call_format: "xml"` renders
+`<tool_call><function=…><parameter=…>` blocks, which is what the recipe's
+`qwen3_coder` parser reads. Do not set `tool_call_format: "json"`: the calls
+would then arrive as plain text in `content`.
+
 ## Rust frontend
 
 `VLLM_USE_RUST_FRONTEND=1` makes `vllm serve` run the `vllm-rs` binary as
@@ -217,7 +235,8 @@ None of the above endorse this repository.
 
 [Apache-2.0](LICENSE) for the configuration, documentation and scripts.
 
-Nothing third-party is redistributed here; everything is pulled at run time
-and stays under its own licence. `Qwen/Qwen3.8-Flash-Next-FP8` is published
+Apart from `chat_template.jinja` (Apache-2.0, peculiar-ragdoll / froggeric,
+unmodified), nothing third-party is redistributed here; everything is pulled
+at run time and stays under its own licence. `Qwen/Qwen3.8-Flash-Next-FP8` is published
 under `qwen-community-1.0` ("other" on Hugging Face); read its terms before
 you deploy it. See [`NOTICE`](NOTICE) for the full list.

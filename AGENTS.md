@@ -44,6 +44,10 @@ add performance claims to any file without a guarded sweep behind them.
   `command:` with `vllm serve` breaks it.
 - **`VLLM_USE_RUST_FRONTEND=1` is part of the recipe.** Removing it is a
   deliberate departure; document it if you do.
+- **Do not bump the vendored `chat_template.jinja` silently.** It is a
+  verbatim Apache-2.0 copy pinned by hash in `NOTICE`. If you bump it, update
+  the hash and commit in both `NOTICE` and `scripts/verify-chat-template.sh`,
+  and run that script. Keep it in step with the single-GPU Qwen3.8 recipe.
 
 ## Restarting the engine
 
