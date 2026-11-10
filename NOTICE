@@ -1,0 +1,30 @@
+vllm-qwen3.8-flash-next-4x-rtx-pro-6000-fp8-monitoring
+Copyright 2026 Wombat Software
+
+This product includes software developed by Wombat Software, licensed under
+the Apache License, Version 2.0 (see LICENSE).
+
+================================================================================
+Components referenced but NOT redistributed here
+================================================================================
+
+These are downloaded or pulled at run time and remain under their own
+licences. This repository contains none of their code or weights.
+
+  vLLM                                       Apache-2.0
+  https://github.com/vllm-project/vllm
+  The engine, including the vllm-rs Rust frontend. The serve command comes
+  from the vLLM recipe at https://recipes.vllm.ai/Qwen/Qwen3.8-Flash-Next
+
+  Qwen/Qwen3.8-Flash-Next                    see model card ("other")
+  https://huggingface.co/Qwen/Qwen3.8-Flash-Next
+  The base model.
+
+  Qwen/Qwen3.8-Flash-Next-FP8                qwen-community-1.0 ("other")
+  https://huggingface.co/Qwen/Qwen3.8-Flash-Next-FP8
+  The checkpoint this recipe serves, including its MTP head.
+
+  Prometheus                                 Apache-2.0
+  Grafana                                    AGPL-3.0
+  nvidia_gpu_exporter                        MIT
+  https://github.com/utkuozdemir/nvidia_gpu_exporter

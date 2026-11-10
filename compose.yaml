@@ -1,0 +1,267 @@
+# vLLM recipe: Qwen3.8-Flash-Next (official FP8 checkpoint) across four RTX PRO
+# 6000 Blackwell cards, tensor + expert parallel (TEP4), MTP-3 speculative
+# decoding, the Rust frontend, and a local Prometheus + Grafana stack.
+#
+# The engine flags are the vLLM recipe's rendered command for this exact
+# configuration, unchanged:
+#   https://recipes.vllm.ai/Qwen/Qwen3.8-Flash-Next?hardware=rtx_pro_6000_4x&variant=fp8&features=tool_calling%2Creasoning%2Cspec_decoding
+# Only --served-model-name, --host and --port are added. Nothing here has been
+# booted or benchmarked on this hardware yet (README "Status"). If you change a
+# flag, run the sweep through ./scripts/benchmark.sh: an unguarded sweep on a
+# shared engine is uninterpretable.
+#
+# The checkpoint is pulled from Hugging Face into HF_CACHE_DIR on first boot
+# (README "Quick start").
+
+# Fixed project name: volumes (Prometheus history, Grafana state) and the
+# network stay the same whatever directory the repo is cloned into. Distinct
+# from the single-GPU qwen-3-8-flash-next recipe so the two never share volumes.
+name: qwen-3-8-flash-next-fp8
+
+services:
+  qwen-3-8-flash-next-fp8:
+    # Bare upstream release, pinned by its manifest-list DIGEST -- the same
+    # image the GLM-5.3-Flash and single-GPU Qwen3.8 recipes run. The recipe
+    # needs vLLM >= 0.30.0 and is "tuned and verified on nightly"; v0.33.0 is
+    # pinned instead because a digest cannot move. Checked inside this image
+    # (CPU-only, no boot): it ships the vllm-rs Rust frontend binary,
+    # AttentionConfig.indexer_kv_dtype, the qwen3_coder tool parser, the qwen3
+    # reasoning parser, the qwen4_exp model with the indexed_attention fix
+    # (PR #59621), and EngramConfig.cpu_offload defaulting to True.
+    # With pull_policy: never a compose recreate can never silently move the
+    # base; pull it once by hand (README step 1). CUDA 13 only (#62575).
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    pull_policy: never
+    container_name: qwen-3-8-flash-next-fp8
+    # On a box whose GPUs other stacks share, set RESTART_POLICY=no in .env so
+    # nothing grabs the cards after a reboot. compose never restarts on
+    # unhealthy, only on exit. A crash loop here re-reads ~173 GiB of weights
+    # and re-pins the N-gram table every cycle; watch the restart count.
+    restart: ${RESTART_POLICY:-always}
+    # vLLM's default is 10 s before SIGKILL; 60 s lets in-flight requests drain.
+    stop_grace_period: 60s
+    init: true
+    ipc: host
+    shm_size: 32g
+    # The N-gram (PLE) embedding table is pinned in host RAM (see
+    # --engram-config below); carried from the single-GPU recipe, which pins
+    # the same table.
+    ulimits:
+      memlock: -1
+    ports:
+      - "${VLLM_BIND:-127.0.0.1}:${VLLM_PORT:-8000}:8000"
+    environment:
+      # From the recipe. The image ENTRYPOINT is `vllm serve`, which reads this
+      # and hands HTTP to the vllm-rs binary instead of the Python API server.
+      # Consequences for this repo (README "Rust frontend"): /metrics is served
+      # by Rust, the access-log format bench-guard.sh parses is unverified, and
+      # vllm:cache_config_info is not in the binary.
+      VLLM_USE_RUST_FRONTEND: "1"
+      HF_TOKEN: "${HF_TOKEN:-}"
+      # Weight load + MTP head + compile across 4 ranks; the default
+      # engine-ready timeout is too short for a cold boot.
+      VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+    volumes:
+      - ${HF_CACHE_DIR:-~/.cache/huggingface}:/root/.cache/huggingface
+      # Kernel/compile caches, persisted so a recreate does not re-JIT.
+      - ${VLLM_CACHE_DIR:-~/.cache/vllm}:/root/.cache/vllm
+      - ${TORCH_CACHE_DIR:-~/.cache/torch}:/root/.cache/torch
+      - ${FLASHINFER_CACHE_DIR:-~/.cache/flashinfer}:/root/.cache/flashinfer
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0", "1", "2", "3"]
+              capabilities: [gpu]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # A first boot downloads the 172.78 GiB checkpoint before it can answer.
+      # Warm-boot time on this config is not measured yet.
+      start_period: 3600s
+    # Bare args: the image ENTRYPOINT is already `vllm serve`. Never prefix
+    # them with `vllm serve`.
+    command:
+      - Qwen/Qwen3.8-Flash-Next-FP8
+      - --served-model-name
+      - Qwen3.8-Flash-Next-FP8
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --max-num-seqs
+      - "16"
+      - --gpu-memory-utilization
+      - "0.95"
+      - --max-num-batched-tokens
+      - "8192"
+      - --enable-prefix-caching
+      - --enable-expert-parallel
+      - --tensor-parallel-size
+      - "4"
+      - --kv-cache-dtype
+      - fp8
+      - --attention-config.indexer_kv_dtype
+      - fp8
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+      - --reasoning-parser
+      - qwen3
+      - --speculative-config
+      - '{"method":"mtp","num_speculative_tokens":3}'
+
+    # ---------------------------------------------------------------------
+    # What each flag is for (recipe values; none re-measured here yet)
+    #
+    # Qwen/Qwen3.8-Flash-Next-FP8
+    #   The official FP8 checkpoint, 172.78 GiB (recipe). Over 4x96 GB that is
+    #   ~43 GiB of weights per card before KV. Not gated on Hugging Face.
+    #
+    # --tensor-parallel-size 4 --enable-expert-parallel  (TEP4)
+    #   The recipe recommends TEP over plain TP for this model ("expert
+    #   parallelism is consistently faster") and notes plain TP is incompatible
+    #   with the FP8 checkpoint's 128-wide quantisation blocks at TP8.
+    #
+    # --max-num-seqs 16 / --gpu-memory-utilization 0.95 /
+    # --max-num-batched-tokens 8192
+    #   The recipe's rtx_pro_6000_4x values (the datacenter renders use 256 /
+    #   0.90 and no batch cap). The resulting KV pool is unknown until the
+    #   first boot; put the "GPU KV cache size" line into the dashboard's
+    #   kv_pool_tokens variable.
+    #
+    # --max-model-len is deliberately absent: vLLM then uses the checkpoint's
+    #   native 262,144 tokens (recipe "Full native context").
+    #
+    # --kv-cache-dtype fp8 / --attention-config.indexer_kv_dtype fp8
+    #   fp8 KV for the attention layers and for the Qwen Sparse Attention
+    #   indexer cache.
+    #
+    # N-gram embedding offload (no flag)
+    #   The 51B N-gram table lives in host RAM by default (EngramConfig
+    #   cpu_offload=True in this image). The recipe calls offload optional only
+    #   on GPUs with more VRAM per rank than H200; these have 96 GB. Needs at
+    #   least 51 GB of free host RAM plus headroom. To make it explicit, add
+    #   --engram-config '{"cpu_offload":true}'.
+    #
+    # --speculative-config method mtp, k=3
+    #   The checkpoint's built-in MTP head; the recipe's spec_decoding feature.
+    #   The dashboard's "Speculative decoding (MTP-3)" row is the proof it is
+    #   active: an engine that lost this flag still boots and still answers.
+    #
+    # --tool-call-parser qwen3_coder / --reasoning-parser qwen3
+    #   The recipe's tool_calling and reasoning features; the checkpoint's own
+    #   chat template is used.
+    #
+    # Keep --disable-log-stats OUT: it stops the stat loggers that feed the
+    #   vllm:* Prometheus metrics the Grafana dashboard is built on (the Rust
+    #   frontend documents the same behaviour).
+    # ---------------------------------------------------------------------
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # GPU telemetry for the dashboard's GPU row: utkuozdemir/nvidia_gpu_exporter,
+  # NVML in-process (-nvml tag), all four cards, :9835 inside the compose
+  # network only. NVML readers open no compute context, so this costs no VRAM.
+  # No healthcheck: the image is a static binary with no shell. The Prometheus
+  # target is the health signal.
+  gpu-exporter:
+    image: docker.io/utkuozdemir/nvidia_gpu_exporter:1.18.0-nvml
+    container_name: qwen-3-8-flash-next-fp8-gpu-exporter
+    restart: ${RESTART_POLICY:-always}
+    environment:
+      # utility = NVML access only; the exporter needs no compute capability.
+      NVIDIA_DRIVER_CAPABILITIES: utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0", "1", "2", "3"]
+              capabilities: [gpu]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # Prometheus and Grafana publish on 127.0.0.1 by default. To reach them from
+  # another machine tunnel:
+  #   ssh -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 <gpu-host>
+  # or set GRAFANA_BIND / PROMETHEUS_BIND to 0.0.0.0 in .env -- which exposes an
+  # unauthenticated Prometheus and a password-only Grafana. Prefer the tunnel.
+  prometheus:
+    image: docker.io/prom/prometheus:v3.16.0
+    container_name: qwen-3-8-flash-next-fp8-prometheus
+    restart: ${RESTART_POLICY:-always}
+    ports:
+      - "${PROMETHEUS_BIND:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command: >
+      --config.file=/etc/prometheus/prometheus.yml
+      --storage.tsdb.path=/prometheus
+      --storage.tsdb.retention.time=30d
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # Datasource and dashboard are provisioned from ./monitoring/grafana. The
+  # dashboard's $model_name variable is resolved from label_values(model_name),
+  # so renaming --served-model-name needs no dashboard edit.
+  #
+  # GRAFANA_ADMIN_PASSWORD only seeds the password when the grafana-data volume
+  # is FIRST created. Rotating it later needs:
+  #   docker exec qwen-3-8-flash-next-fp8-grafana grafana cli admin reset-admin-password '<new>'
+  grafana:
+    image: docker.io/grafana/grafana:13.3.0
+    container_name: qwen-3-8-flash-next-fp8-grafana
+    restart: ${RESTART_POLICY:-always}
+    ports:
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/vllm-qwen-3-8-flash-next-fp8.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+volumes:
+  prometheus-data:
+  grafana-data:
