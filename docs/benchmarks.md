@@ -6,6 +6,16 @@
 fit in the pool by arithmetic (preemption not yet observed either way). The Rust frontend writes no access log, so the guard
 can only report `PASS-BLIND`. Results go here once a sweep runs.
 
+MTP-3 spot check (2026-11-10, one ~1,000-token prose request each, from
+`/metrics` counter deltas): **1.82 accepted tokens per draft at temperature 0**
+(mean acceptance length 2.82 including the bonus token; the single-GPU
+NVFP4 recipe measured 2.695) and **1.61 at temperature 0.7**. Two requests,
+not a benchmark. The boot log's `Qwen4ExpMTP does not support external
+multimodal embeddings ... using text-only draft inputs` warning does not
+show up as an acceptance loss on text. An earlier 0.88 reading came from a
+handful of short creative requests right after boot and is not
+representative.
+
 ## Test machine
 
 | | |
