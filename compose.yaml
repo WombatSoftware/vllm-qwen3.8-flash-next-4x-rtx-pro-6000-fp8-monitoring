@@ -6,8 +6,8 @@
 # configuration, unchanged:
 #   https://recipes.vllm.ai/Qwen/Qwen3.8-Flash-Next?hardware=rtx_pro_6000_4x&variant=fp8&features=tool_calling%2Creasoning%2Cspec_decoding
 # Only --served-model-name, --host, --port and --chat-template (the vendored
-# Qwen-Sharp v22.5.0 template, as in the single-GPU recipe) are added. Nothing here has been
-# booted or benchmarked on this hardware yet (README "Status"). If you change a
+# Qwen-Sharp v22.5.0 template, as in the single-GPU recipe) are added. Booted
+# on this hardware (2026-11-10), not yet benchmarked (README "Status"). If you change a
 # flag, run the sweep through ./scripts/benchmark.sh: an unguarded sweep on a
 # shared engine is uninterpretable.
 #
@@ -55,8 +55,9 @@ services:
       # From the recipe. The image ENTRYPOINT is `vllm serve`, which reads this
       # and hands HTTP to the vllm-rs binary instead of the Python API server.
       # Consequences for this repo (README "Rust frontend"): /metrics is served
-      # by Rust, the access-log format bench-guard.sh parses is unverified, and
-      # vllm:cache_config_info is not in the binary.
+      # by Rust and carries every vllm:* metric the dashboard uses except
+      # vllm:cache_config_info, and there is no per-request access log, so
+      # bench-guard.sh reports PASS-BLIND.
       VLLM_USE_RUST_FRONTEND: "1"
       HF_TOKEN: "${HF_TOKEN:-}"
       # Weight load + MTP head + compile across 4 ranks; the default
@@ -88,7 +89,7 @@ services:
       timeout: 10s
       retries: 3
       # A first boot downloads the 172.78 GiB checkpoint before it can answer.
-      # Warm-boot time on this config is not measured yet.
+      # First boot with weights already cached: 191 s to healthy (2026-11-10).
       start_period: 3600s
     # Bare args: the image ENTRYPOINT is already `vllm serve`. Never prefix
     # them with `vllm serve`.
@@ -139,9 +140,9 @@ services:
     # --max-num-seqs 16 / --gpu-memory-utilization 0.95 /
     # --max-num-batched-tokens 8192
     #   The recipe's rtx_pro_6000_4x values (the datacenter renders use 256 /
-    #   0.90 and no batch cap). The resulting KV pool is unknown until the
-    #   first boot; put the "GPU KV cache size" line into the dashboard's
-    #   kv_pool_tokens variable.
+    #   0.90 and no batch cap). First boot: "GPU KV cache size: 7,076,500
+    #   tokens, Maximum concurrency for 262,144 tokens per request: 26.99x";
+    #   that number is the dashboard's kv_pool_tokens variable.
     #
     # --max-model-len is deliberately absent: vLLM then uses the checkpoint's
     #   native 262,144 tokens (recipe "Full native context").

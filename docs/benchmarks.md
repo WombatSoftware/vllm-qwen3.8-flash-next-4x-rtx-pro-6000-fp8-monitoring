@@ -1,8 +1,10 @@
 # Benchmarks
 
-**No results recorded yet.** This configuration has not been booted on the
-reference box. This file holds the method; results go here once a guarded
-sweep passes.
+**No throughput results recorded yet.** First boot on the reference box
+(2026-11-10): healthy in 191 s with the weights pre-downloaded, KV pool
+7,076,500 tokens (26.99x at 262,144), so four 131k requests (524,288 tokens)
+fit in the pool by arithmetic (preemption not yet observed either way). The Rust frontend writes no access log, so the guard
+can only report `PASS-BLIND`. Results go here once a sweep runs.
 
 ## Test machine
 

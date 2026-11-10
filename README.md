@@ -16,17 +16,14 @@ for the same four cards.
 
 ## Status
 
-**Not yet booted or benchmarked on this hardware.** Every number below is
-either from the vLLM recipe page or a property of the checkpoint; none is a
-measurement from this repo. `docs/benchmarks.md` has the sweep to run and no
-results yet. The GLM-5.3 and single-GPU Qwen3.8 recipes this is modelled on
-make claims only from measurements; this one will once it has some.
-
-What was checked, inside the pinned image and without a GPU: the `vllm-rs`
-Rust frontend binary is present, `vllm serve` (the image ENTRYPOINT) honours
-`VLLM_USE_RUST_FRONTEND`, and `--attention-config.indexer_kv_dtype`, the
-`qwen3_coder` tool parser, the `qwen3` reasoning parser and the `qwen4_exp`
-model are all in v0.33.0.
+**Booted, not yet benchmarked.** First boot on the reference box
+(2026-11-10, 4x RTX PRO 6000 Max-Q, weights pre-downloaded, empty compile
+caches) reached `/health` in **191 s** and reported a KV pool of
+**7,076,500 tokens = 26.99x** one 262,144-token request. A tool call came
+back parsed into `tool_calls` (`finish_reason: tool_calls`), a plain chat
+answered correctly, and every dashboard panel returned data against live
+Prometheus. There are no throughput numbers yet; `docs/benchmarks.md` has
+the sweep to run.
 
 ### Opinionated about what, exactly
 
@@ -134,7 +131,7 @@ Grafana is at <http://127.0.0.1:3000>, Prometheus at <http://127.0.0.1:9090>.
 | Tool calling | Auto tool choice, `qwen3_coder` parser |
 | Reasoning | Split into `reasoning_content` (`qwen3` reasoning parser) |
 | Speculative decoding | MTP, 3 draft tokens |
-| KV cache | fp8, plus fp8 for the sparse-attention indexer cache; pool size known after first boot |
+| KV cache | fp8, plus fp8 for the sparse-attention indexer cache; 7,076,500-token pool |
 | Monitoring | Prometheus scraping vLLM and a GPU exporter (all four cards), Grafana with a 30-panel dashboard in 8 rows, provisioned |
 
 ## The chat template
@@ -155,24 +152,17 @@ would then arrive as plain text in `content`.
 
 `VLLM_USE_RUST_FRONTEND=1` makes `vllm serve` run the `vllm-rs` binary as
 the HTTP server instead of the Python API server. The dashboard was built
-against the Python frontend, so four things are unverified until the first
-boot:
+against the Python frontend; on the first boot:
 
-- **Engine metrics.** The binary contains every `vllm:*` metric name the
-  dashboard queries except `vllm:cache_config_info`. Not yet seen on a live
-  `/metrics`.
-- **HTTP metrics.** The "HTTP requests and errors" panel queries
-  `http_requests_total`. The binary has a counter described as "Total number
-  of HTTP requests by method, status, and handler", but its exact metric
-  name is not visible in the binary's strings.
-- **`vllm:cache_config_info` is not in the binary**, so the "KV cache pool
-  (boot-time config)" table will most likely show No data. The boot log's
-  `GPU KV cache size` line has the same information.
-- **Access-log format.** `scripts/bench-guard.sh` detects foreign clients by
-  parsing uvicorn-style access-log lines. If the Rust frontend logs
-  differently, that check sees nothing; the guard then records
-  `VERDICT: PASS-BLIND` instead of `PASS`, so a blind run cannot pass as a
-  guarded one.
+- **Engine and HTTP metrics are there.** Every `vllm:*` metric the dashboard
+  queries is exported, and `http_requests_total{method,status,handler}` uses
+  the same grouped status labels (`2xx`, `4xx`) as the Python instrumentator.
+- **`vllm:cache_config_info` is not exported.** The "KV cache pool" stat
+  panel therefore reads the `kv_pool_tokens` dashboard variable, copied from
+  the boot log.
+- **There is no per-request access log.** `scripts/bench-guard.sh` cannot see
+  foreign clients and records `VERDICT: PASS-BLIND`; only its concurrency
+  check guards a sweep.
 
 To run the Python frontend instead, delete `VLLM_USE_RUST_FRONTEND` from
 `compose.yaml`. That is a departure from the recipe.
@@ -183,11 +173,10 @@ The dashboard (`monitoring/grafana/dashboards/vllm-qwen-3-8-flash-next-fp8.json`
 is the GLM-5.3-Flash dashboard with the model-specific parts changed:
 
 - the speculative-decoding row tracks MTP-3 instead of DFlash2;
-- the "KV cache tokens in use" panel multiplies usage by a
-  `kv_pool_tokens` dashboard variable instead of a hard-coded pool size,
-  because this config's pool is not known yet. It ships as `0` and the panel
-  stays blank until you set it. The dashboard is provisioned read-only, so
-  persist the value by editing the variable's `query` in the JSON.
+- the "KV cache tokens in use" panel and the "KV cache pool (boot log)" stat
+  read a `kv_pool_tokens` dashboard variable (7,076,500) instead of a
+  hard-coded constant or `vllm:cache_config_info`. The dashboard is
+  provisioned read-only, so change it by editing the variable in the JSON.
 
 The GPU row is unchanged: per-card power against the enforced limit, core
 temperature against the live HW-slowdown threshold, fan speed.

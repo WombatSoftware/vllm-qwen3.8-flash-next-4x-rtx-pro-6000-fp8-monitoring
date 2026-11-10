@@ -5,7 +5,7 @@
 # exit 42) the moment anything violates bench isolation:
 #   - a request reaches the engine from a client outside ALLOW_IPS (access-log evidence;
 #     if no request line is seen at all the check was blind and the verdict says so --
-#     the Rust frontend's access-log format is unverified),
+#     the Rust frontend (VLLM_USE_RUST_FRONTEND=1) writes no access log, so expect PASS-BLIND),
 #   - vllm:num_preemptions_total increases (NOTED, not fatal: preemption under the bench's
 #     own load is KV arithmetic, not interference);
 #   - vllm:num_requests_running exceeds EXPECTED_MAX (foreign concurrency; 0 at start).

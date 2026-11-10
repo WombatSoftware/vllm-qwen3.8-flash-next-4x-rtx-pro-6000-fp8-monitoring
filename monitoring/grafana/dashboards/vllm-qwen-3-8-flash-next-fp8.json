@@ -1877,7 +1877,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "kv_cache_usage_perc x $kv_pool_tokens = tokens occupied in the KV pool. $kv_pool_tokens is the boot-time 'GPU KV cache size' from the engine log. This config has not been booted on the reference box yet, so it ships as 0 and the panel stays blank until set. Persist it by editing the kv_pool_tokens variable's query in this JSON (the dashboard is provisioned read-only), and EDIT IT whenever TP / gpu-memory-utilization / batch budget / speculative config moves the pool.",
+      "description": "kv_cache_usage_perc x $kv_pool_tokens = tokens occupied in the KV pool. $kv_pool_tokens is the boot-time 'GPU KV cache size' from the engine log. 7,076,500 tokens = 26.99x one 262,144-token request on the 2026-11-10 boot (v0.33.0, TEP4, util 0.95, fp8 KV, MTP-3). Persist changes by editing the kv_pool_tokens variable in this JSON (the dashboard is provisioned read-only), and EDIT IT whenever TP / gpu-memory-utilization / batch budget / speculative config moves the pool.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1887,7 +1887,8 @@
           },
           "min": 0,
           "unit": "short",
-          "noValue": "Set kv_pool_tokens (GPU KV cache size from the boot log)"
+          "noValue": "Set kv_pool_tokens (GPU KV cache size from the boot log)",
+          "max": 7076500
         },
         "overrides": []
       },
@@ -2114,15 +2115,39 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "The KV pool as the engine reported it at boot (vllm:cache_config_info labels). This is a Python-frontend metric: the vllm-rs binary in the pinned v0.33.0 image contains no cache_config_info string, so under VLLM_USE_RUST_FRONTEND=1 expect No data (inferred from the binary, not yet observed). The boot log's 'GPU KV cache size' line is the fallback.",
+      "description": "The Rust frontend (VLLM_USE_RUST_FRONTEND=1) does not export vllm:cache_config_info (confirmed on the 2026-11-10 boot), so the pool comes from the kv_pool_tokens variable, copied from the boot log's 'GPU KV cache size' line. Max concurrency = pool / 262,144 (the native max_model_len).",
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto"
+          "unit": "short",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
-          "noValue": "Not exported by the Rust frontend; read the boot log"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pool tokens"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 5,
@@ -2132,7 +2157,19 @@
       },
       "id": 28,
       "options": {
-        "showHeader": true
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "auto",
+        "justifyMode": "auto",
+        "wideLayout": true
       },
       "targets": [
         {
@@ -2141,35 +2178,27 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max by (cache_dtype, effective_attention_block_size, kv_cache_size_tokens, kv_cache_max_concurrency, num_gpu_blocks, gpu_memory_utilization, model) (vllm:cache_config_info{job=\"vllm\"})",
-          "format": "table",
+          "expr": "vector($kv_pool_tokens)",
+          "legendFormat": "pool tokens",
+          "range": false,
           "instant": true,
-          "legendFormat": "__auto",
-          "range": false
-        }
-      ],
-      "title": "KV cache pool (boot-time config)",
-      "transformations": [
-        {
-          "id": "extractLabels",
-          "options": {}
+          "refId": "A"
         },
         {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value": true,
-              "__name__": true,
-              "engine": true,
-              "instance": true,
-              "job": true,
-              "model_name": true
-            }
-          }
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "vector($kv_pool_tokens) / 262144",
+          "legendFormat": "x 262k requests",
+          "range": false,
+          "instant": true,
+          "refId": "B"
         }
       ],
-      "type": "table"
+      "title": "KV cache pool (boot log)",
+      "type": "stat"
     },
     {
       "collapsed": false,
@@ -3033,21 +3062,21 @@
       {
         "current": {
           "selected": false,
-          "text": "0",
-          "value": "0"
+          "text": "7076500",
+          "value": "7076500"
         },
-        "description": "Boot-time KV pool in tokens ('GPU KV cache size' in the engine log). 0 = unknown; the tokens-in-use panel stays blank.",
+        "description": "Boot-time KV pool in tokens ('GPU KV cache size' in the engine log). 7,076,500 = v0.33.0 TEP4, util 0.95, fp8 KV, MTP-3, measured 2026-11-10. 0 blanks the tokens-in-use panel.",
         "hide": 0,
         "label": "kv_pool_tokens",
         "name": "kv_pool_tokens",
         "options": [
           {
             "selected": true,
-            "text": "0",
-            "value": "0"
+            "text": "7076500",
+            "value": "7076500"
           }
         ],
-        "query": "0",
+        "query": "7076500",
         "skipUrlSync": false,
         "type": "textbox"
       }

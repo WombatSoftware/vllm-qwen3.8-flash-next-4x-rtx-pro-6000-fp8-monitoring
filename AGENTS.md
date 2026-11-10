@@ -17,8 +17,8 @@ are load-bearing. Do not "tidy" them away.
 The engine is the bare upstream v0.33.0 release image, pinned by digest. There
 is no Dockerfile and no fork.
 
-**Nothing here is measured yet.** `docs/benchmarks.md` has no results. Do not
-add performance claims to any file without a guarded sweep behind them.
+**Booted, not benchmarked.** `docs/benchmarks.md` has no throughput results.
+Do not add performance claims to any file without a guarded sweep behind them.
 
 ## Hard rules
 
@@ -51,8 +51,9 @@ add performance claims to any file without a guarded sweep behind them.
 
 ## Restarting the engine
 
-Boot time on this config is not measured yet. A first boot downloads the
-172.78 GiB checkpoint first, which is why `start_period` is 3600 s.
+The first boot (weights pre-downloaded, empty compile caches) took 191 s to
+healthy. A first boot that has to download the 172.78 GiB checkpoint takes far
+longer, which is why `start_period` is 3600 s. Expect a pool of 7,076,500 tokens.
 
 ```bash
 docker compose up -d qwen-3-8-flash-next-fp8
