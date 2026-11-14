@@ -4,8 +4,8 @@
 #   pip install llama-benchy
 #   ./scripts/benchmark.sh [output-id]
 #
-# Duration on this config is not measured yet (the same sweep took 8-10 min for
-# GLM-5.3-Flash on these cards). The engine must already be healthy -- a run against a
+# Duration on this config is not measured yet (a comparable sweep took 8-10 min
+# on these cards with the previous engine). The engine must already be healthy -- a run against a
 # restarting engine produces meaningless numbers. llama-benchy buffers stdout
 # until exit, so poll `pgrep -f llama-benchy` for liveness, not log growth.
 #

@@ -9,10 +9,10 @@ MTP-3 speculative decoding, the Rust frontend, and a bundled local
 
 The engine flags are the vLLM recipe's rendered command for
 [`rtx_pro_6000_4x` / `fp8` / tool calling + reasoning + spec decoding](https://recipes.vllm.ai/Qwen/Qwen3.8-Flash-Next?hardware=rtx_pro_6000_4x&variant=fp8&features=tool_calling%2Creasoning%2Cspec_decoding),
-unchanged. The packaging (compose, digest pin, monitoring, benchmark guard)
-and the 30-panel Grafana dashboard come from the sibling
-[GLM-5.3-Flash recipe](https://github.com/WombatSoftware/vllm-glm5.3-flash-4x-rtx-pro-6000-dflash2-monitoring)
-for the same four cards.
+plus one local addition (`--gpu-memory-utilization 0.95`, which no recipe
+render carries — see the flag notes in `compose.yaml`). The packaging
+(compose, digest pin, monitoring, benchmark guard) and the 30-panel Grafana
+dashboard follow an earlier recipe written for the same four cards.
 
 ## Status
 
@@ -34,7 +34,9 @@ the sweep to run.
   the same pinned copy as the single-GPU recipe, instead of the checkpoint's
   template. See [The chat template](#the-chat-template).
 - **The recipe's command otherwise verbatim** — only `--served-model-name`,
-  `--host`, `--port` and `--chat-template` are added.
+  `--host`, `--port`, `--chat-template` and `--gpu-memory-utilization 0.95`
+  are added; the last is a local choice, not part of the render (the recipe
+  leaves the flag unset).
 - **A pinned release engine** — the bare upstream vLLM v0.33.0 image, pinned
   by digest. The recipe asks for ≥ 0.30.0 and is tuned on nightly; a digest
   pin is preferred over a moving `nightly` tag (see
@@ -56,12 +58,13 @@ the sweep to run.
 |---|---|
 | GPUs | **4x** RTX PRO 6000 Blackwell, 96 GB each. The reference box has the 300 W Max-Q edition over PCIe. |
 | Driver | CUDA 13 capable (v0.33.0 images are CUDA 13 only). |
-| Host RAM | **≥ 51 GB free plus headroom** for the N-gram embedding table, which this image offloads to host RAM by default (recipe). |
+| Host RAM | **≥ 51 GB free plus headroom** for the 51B N-gram embedding table, which vLLM offloads to pinned host RAM by default (recipe; this stack's boot logs confirm `EngramConfig(cpu_offload=True)` and a pinned CPU-resident table, and the running engine container holds ~83 GiB of host RAM on the 122 GiB reference box). |
 | Disk | ~173 GiB for the checkpoint in the Hugging Face cache. |
 | Software | Docker with Compose v2 and the NVIDIA Container Toolkit. |
 
 This stack binds the same four GPUs and the same host ports (8000, 3000,
-9090) as the GLM-5.3-Flash recipe. Run one at a time.
+9090) as the other engine recipe on the reference box. Run one engine at a
+time.
 
 ## Quick start
 
@@ -131,7 +134,7 @@ Grafana is at <http://127.0.0.1:3000>, Prometheus at <http://127.0.0.1:9090>.
 | Tool calling | Auto tool choice, `qwen3_coder` parser |
 | Reasoning | Split into `reasoning_content` (`qwen3` reasoning parser) |
 | Speculative decoding | MTP, 3 draft tokens |
-| KV cache | fp8, plus fp8 for the sparse-attention indexer cache; 7,076,500-token pool |
+| KV cache | fp8, plus fp8 for the sparse-attention indexer cache; 7,077,888-token pool (27.00x; 7,076,500 on the 2026-11-10 first boot) |
 | Monitoring | Prometheus scraping vLLM and a GPU exporter (all four cards), Grafana with a 30-panel dashboard in 8 rows, provisioned |
 
 ## The chat template
@@ -170,13 +173,15 @@ To run the Python frontend instead, delete `VLLM_USE_RUST_FRONTEND` from
 ## Monitoring
 
 The dashboard (`monitoring/grafana/dashboards/vllm-qwen-3-8-flash-next-fp8.json`)
-is the GLM-5.3-Flash dashboard with the model-specific parts changed:
+follows the earlier 4-card recipe's dashboard with the model-specific parts
+changed:
 
-- the speculative-decoding row tracks MTP-3 instead of DFlash2;
+- the speculative-decoding row tracks MTP-3;
 - the "KV cache tokens in use" panel and the "KV cache pool (boot log)" stat
-  read a `kv_pool_tokens` dashboard variable (7,076,500) instead of a
-  hard-coded constant or `vllm:cache_config_info`. The dashboard is
-  provisioned read-only, so change it by editing the variable in the JSON.
+  read a `kv_pool_tokens` dashboard variable (7,077,888 on the current boot)
+  instead of a hard-coded constant or `vllm:cache_config_info`. The dashboard
+  is provisioned read-only, so change it by editing the variable in the
+  JSON.
 
 The GPU row is unchanged: per-card power against the enforced limit, core
 temperature against the live HW-slowdown threshold, fan speed.

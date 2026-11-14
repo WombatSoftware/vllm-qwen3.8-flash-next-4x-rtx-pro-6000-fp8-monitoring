@@ -1877,7 +1877,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "kv_cache_usage_perc x $kv_pool_tokens = tokens occupied in the KV pool. $kv_pool_tokens is the boot-time 'GPU KV cache size' from the engine log. 7,076,500 tokens = 26.99x one 262,144-token request on the 2026-11-10 boot (v0.33.0, TEP4, util 0.95, fp8 KV, MTP-3). Persist changes by editing the kv_pool_tokens variable in this JSON (the dashboard is provisioned read-only), and EDIT IT whenever TP / gpu-memory-utilization / batch budget / speculative config moves the pool.",
+      "description": "kv_cache_usage_perc x $kv_pool_tokens = tokens occupied in the KV pool. $kv_pool_tokens is the boot-time 'GPU KV cache size' from the engine log. 7,077,888 tokens = 27.00x one 262,144-token request on the 2026-11-13 boot (v0.33.0, TEP4, util 0.95, fp8 KV, MTP-3; the 2026-11-10 first boot reported 7,076,500 -- the pool drifts slightly between identical boots). Persist changes by editing the kv_pool_tokens variable in this JSON (the dashboard is provisioned read-only), and EDIT IT whenever TP / gpu-memory-utilization / batch budget / speculative config moves the pool.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1888,7 +1888,7 @@
           "min": 0,
           "unit": "short",
           "noValue": "Set kv_pool_tokens (GPU KV cache size from the boot log)",
-          "max": 7076500
+          "max": 7077888
         },
         "overrides": []
       },
@@ -3062,21 +3062,21 @@
       {
         "current": {
           "selected": false,
-          "text": "7076500",
-          "value": "7076500"
+          "text": "7077888",
+          "value": "7077888"
         },
-        "description": "Boot-time KV pool in tokens ('GPU KV cache size' in the engine log). 7,076,500 = v0.33.0 TEP4, util 0.95, fp8 KV, MTP-3, measured 2026-11-10. 0 blanks the tokens-in-use panel.",
+        "description": "Boot-time KV pool in tokens ('GPU KV cache size' in the engine log). 7,077,888 = v0.33.0 TEP4, util 0.95, fp8 KV, MTP-3, measured 2026-11-13 (first boot 2026-11-10: 7,076,500). Re-read the boot line after every boot that can move the pool. 0 blanks the tokens-in-use panel.",
         "hide": 0,
         "label": "kv_pool_tokens",
         "name": "kv_pool_tokens",
         "options": [
           {
             "selected": true,
-            "text": "7076500",
-            "value": "7076500"
+            "text": "7077888",
+            "value": "7077888"
           }
         ],
-        "query": "7076500",
+        "query": "7077888",
         "skipUrlSync": false,
         "type": "textbox"
       }

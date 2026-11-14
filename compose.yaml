@@ -3,13 +3,17 @@
 # decoding, the Rust frontend, and a local Prometheus + Grafana stack.
 #
 # The engine flags are the vLLM recipe's rendered command for this exact
-# configuration, unchanged:
+# configuration:
 #   https://recipes.vllm.ai/Qwen/Qwen3.8-Flash-Next?hardware=rtx_pro_6000_4x&variant=fp8&features=tool_calling%2Creasoning%2Cspec_decoding
-# Only --served-model-name, --host, --port and --chat-template (the vendored
-# Qwen-Sharp v22.5.0 template, as in the single-GPU recipe) are added. Booted
-# on this hardware (2026-11-10), not yet benchmarked (README "Status"). If you change a
-# flag, run the sweep through ./scripts/benchmark.sh: an unguarded sweep on a
-# shared engine is uninterpretable.
+# Added on top: --served-model-name, --host, --port, --chat-template (the
+# vendored Qwen-Sharp v22.5.0 template, as in the single-GPU recipe) and
+# --gpu-memory-utilization 0.95 -- that last one is NOT part of the render
+# (no recipe render sets it; the guide leaves it to vLLM's post-warmup
+# measurement). It is kept because every measured boot of this stack ran
+# with it; see the flag notes below. Booted on this hardware (2026-11-10),
+# not yet benchmarked (README "Status"). If you change a flag, run the sweep
+# through ./scripts/benchmark.sh: an unguarded sweep on a shared engine is
+# uninterpretable.
 #
 # The checkpoint is pulled from Hugging Face into HF_CACHE_DIR on first boot
 # (README "Quick start").
@@ -22,7 +26,7 @@ name: qwen-3-8-flash-next-fp8
 services:
   qwen-3-8-flash-next-fp8:
     # Bare upstream release, pinned by its manifest-list DIGEST -- the same
-    # image the GLM-5.3-Flash and single-GPU Qwen3.8 recipes run. The recipe
+    # image the single-GPU Qwen3.8 recipe runs. The recipe
     # needs vLLM >= 0.30.0 and is "tuned and verified on nightly"; v0.33.0 is
     # pinned instead because a digest cannot move. Checked inside this image
     # (CPU-only, no boot): it ships the vllm-rs Rust frontend binary,
@@ -44,9 +48,9 @@ services:
     init: true
     ipc: host
     shm_size: 32g
-    # The N-gram (PLE) embedding table is pinned in host RAM (see
-    # --engram-config below); carried from the single-GPU recipe, which pins
-    # the same table.
+    # The N-gram (PLE) embedding table is pinned in host RAM (every boot logs
+    # the ngram_embedding with weight_device=cpu, pinned=True -- see the flag
+    # notes below), which needs the default memlock limit lifted.
     ulimits:
       memlock: -1
     ports:
@@ -137,12 +141,21 @@ services:
     #   parallelism is consistently faster") and notes plain TP is incompatible
     #   with the FP8 checkpoint's 128-wide quantisation blocks at TP8.
     #
-    # --max-num-seqs 16 / --gpu-memory-utilization 0.95 /
-    # --max-num-batched-tokens 8192
-    #   The recipe's rtx_pro_6000_4x values (the datacenter renders use 256 /
-    #   0.90 and no batch cap). First boot: "GPU KV cache size: 7,076,500
-    #   tokens, Maximum concurrency for 262,144 tokens per request: 26.99x";
-    #   that number is the dashboard's kv_pool_tokens variable.
+    # --max-num-seqs 16 / --max-num-batched-tokens 8192
+    #   The recipe's rtx_pro_6000_4x fp8 values (the datacenter renders use
+    #   256 seqs and no batch cap).
+    #
+    # --gpu-memory-utilization 0.95  (local addition; no render has it)
+    #   The recipe guide says to leave this unset unless the GPUs are shared.
+    #   It is kept because every measured boot of this stack ran with it --
+    #   changing or dropping it moves the KV pool, which then needs
+    #   kv_pool_tokens re-read from the boot log.
+    #
+    # Boot line: first boot (2026-11-10) reported "GPU KV cache size:
+    #   7,076,500 tokens, Maximum concurrency for 262,144 tokens per request:
+    #   26.99x"; the 2026-11-12 and 2026-11-13 boots reported 7,077,888 /
+    #   27.00x. The pool moves slightly between identical boots; the
+    #   dashboard's kv_pool_tokens variable tracks the current boot.
     #
     # --max-model-len is deliberately absent: vLLM then uses the checkpoint's
     #   native 262,144 tokens (recipe "Full native context").
@@ -151,12 +164,16 @@ services:
     #   fp8 KV for the attention layers and for the Qwen Sparse Attention
     #   indexer cache.
     #
-    # N-gram embedding offload (no flag)
-    #   The 51B N-gram table lives in host RAM by default (EngramConfig
-    #   cpu_offload=True in this image). The recipe calls offload optional only
-    #   on GPUs with more VRAM per rank than H200; these have 96 GB. Needs at
-    #   least 51 GB of free host RAM plus headroom. To make it explicit, add
-    #   --engram-config '{"cpu_offload":true}'.
+    # N-gram embedding offload (no flag; ON by default in this variant)
+    #   The model's 51B N-gram/PLE embedding table runs offloaded to pinned
+    #   host RAM: every boot logs "Resolved Engram configuration:
+    #   EngramConfig(cpu_offload=True, ...)" and, per worker, "ngram_embedding
+    #   ... weight_device=cpu, pinned=True"; the running engine container
+    #   holds ~83 GiB of host RAM (measured 2026-11-14, 122 GiB host). The
+    #   recipe calls offload optional only on GPUs with more VRAM per rank
+    #   than H200; these have 96 GB. Needs at least 51 GB of free host RAM
+    #   plus headroom. To make it explicit, add --engram-config
+    #   '{"cpu_offload":true}'.
     #
     # --speculative-config method mtp, k=3
     #   The checkpoint's built-in MTP head; the recipe's spec_decoding feature.

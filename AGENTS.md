@@ -22,13 +22,22 @@ Do not add performance claims to any file without a guarded sweep behind them.
 
 ## Hard rules
 
+- **This repository is PUBLIC** (`WombatSoftware/...` on GitHub, visibility
+  checked 2026-11-14). Never put hostnames, IPs, serials, local usernames or
+  home-directory paths, credentials, or anything that identifies the
+  reference box or its owner into files, comments, the dashboard JSON, or
+  commit messages. Hardware is described by spec only (GPU model, RAM size,
+  measured numbers) as "the reference box"; SSH examples use `<gpu-host>`.
+  Before pushing, grep the diff:
+  `git diff @ | grep -niE "192\.168|/Users/|<your name|hostname>"`.
 - **Never commit `.env`.** It holds `GRAFANA_ADMIN_PASSWORD` and possibly
   `HF_TOKEN`. It is gitignored; keep it that way.
 - **Never `docker compose down`** on a shared box. It takes Prometheus and
   Grafana with it. Recreate the single service:
   `docker compose up -d qwen-3-8-flash-next-fp8`.
-- **This stack and the GLM-5.3-Flash stack share the four GPUs and host ports
-  8000/3000/9090.** Stop the other engine before starting this one, and do
+- **This stack shares the four GPUs and host ports 8000/3000/9090 with the
+  other engine recipe on the reference box.** Stop the other engine before
+  starting this one, and do
   not stop someone else's engine without asking: on the reference box the
   engine on these cards may be the one serving you.
 - **Never change a flag and a benchmark claim in the same commit** without
@@ -53,7 +62,9 @@ Do not add performance claims to any file without a guarded sweep behind them.
 
 The first boot (weights pre-downloaded, empty compile caches) took 191 s to
 healthy. A first boot that has to download the 172.78 GiB checkpoint takes far
-longer, which is why `start_period` is 3600 s. Expect a pool of 7,076,500 tokens.
+longer, which is why `start_period` is 3600 s. Expect a pool of roughly
+7,077,000 tokens (7,076,500 at the first boot; 7,077,888 on the 2026-11-12
+and 2026-11-13 boots — the pool drifts slightly between identical boots).
 
 ```bash
 docker compose up -d qwen-3-8-flash-next-fp8
