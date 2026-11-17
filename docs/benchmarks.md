@@ -28,7 +28,8 @@ fit in the pool by arithmetic (preemption not yet observed either way). The Rust
 can only report `PASS-BLIND`. Results go here once a sweep runs. The
 2026-11-12 and 2026-11-13 boots of the same config report 7,077,888 tokens
 (27.00x): the pool moves slightly between identical boots, so re-read the
-boot line before setting `kv_pool_tokens`.
+boot line; the dashboard's `kv_pool_tokens` variable now reads it from
+`vllm:cache_config_info`.
 
 MTP-3 spot check (2026-11-10, one ~1,000-token prose request each, from
 `/metrics` counter deltas): **1.82 accepted tokens per draft at temperature 0**
@@ -81,8 +82,8 @@ while the sweep runs.
 ## Things to record from the first boot
 
 - Warm and cold boot time to `/health`.
-- `GPU KV cache size` and the max-concurrency line (and set the dashboard's
-  `kv_pool_tokens` from it). Four 131,072-token requests need 524,288
+- `GPU KV cache size` and the max-concurrency line (the dashboard's
+  `kv_pool_tokens` variable should show the same number). Four 131,072-token requests need 524,288
   tokens; whether the deep c4 cells preempt depends on this number.
 - Host RSS of the engine container with the N-gram table offloaded —
   recorded 2026-11-14: 83 GiB for the engine container (host total 122 GiB).

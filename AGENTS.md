@@ -87,16 +87,16 @@ re-reads the weights and re-pins the N-gram table in host RAM.
 
 ## Dashboard
 
-- The "KV cache tokens in use" panel reads the `kv_pool_tokens` dashboard
-  variable. After every boot that can move the pool (image, TP,
-  gpu-memory-utilization, batch budget, speculative config), set the
-  variable's `query`/`current` in the JSON to the boot's `GPU KV cache size`.
+- The KV pool panels read the `kv_pool_tokens` dashboard variable, a
+  Prometheus `query_result` on `vllm:cache_config_info{job="vllm"}` with a
+  regex on its `kv_cache_size_tokens` label. Nothing is edited after a boot.
+  Do not turn it back into a constant.
 - Do not reintroduce hard-coded `model_name` literals; panels bind to
   `$model_name`.
-- `vllm:cache_config_info` was absent from the `vllm-rs` binary on v0.33.0
-  and is exported on v0.34.0 (pool in its `kv_cache_size_tokens` label).
-  The panels still read `kv_pool_tokens`; switching them is a dashboard
-  change to make and verify on its own, not a value to guess.
+- `vllm:cache_config_info` is exported by the `vllm-rs` binary since
+  v0.34.0 and carries no `model_name` label there, which is why the
+  variable selects it by `job`. On an older base the variable comes back
+  empty and both pool panels go blank.
 
 ## Benchmarking
 
@@ -118,7 +118,8 @@ Requirements:
    `vllm-rs` binary, and the flags in `command:`. `vllm serve --help` needs a
    visible GPU in this image; grep the installed source instead.
 3. Keep the old image. Recreate the engine and verify the boot lines above.
-4. Update `kv_pool_tokens` in the dashboard.
+4. Check that the dashboard's `kv_pool_tokens` variable shows the new boot's
+   `GPU KV cache size` (it is read from `vllm:cache_config_info`).
 5. Run a guarded sweep and compare against `docs/benchmarks.md` before calling
    the new base the baseline. Delete the old image only after that.
 

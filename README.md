@@ -108,8 +108,8 @@ docker logs qwen-3-8-flash-next-fp8 2>&1 | grep -E \
 
 Expect `SpeculativeConfig(method='mtp', ..., num_spec_tokens=3)`,
 `tensor_parallel_size: 4`, `enable_expert_parallel: True` and
-`kv_cache_dtype: fp8`. Put the `GPU KV cache size` token count into the
-dashboard's `kv_pool_tokens` variable (see [Monitoring](#monitoring)).
+`kv_cache_dtype: fp8`. The dashboard picks the `GPU KV cache size` up by
+itself (see [Monitoring](#monitoring)).
 
 **4. Check it:**
 
@@ -167,10 +167,11 @@ against the Python frontend:
 - **Engine and HTTP metrics are there.** Every `vllm:*` metric the dashboard
   queries is exported, and `http_requests_total{method,status,handler}` uses
   the same grouped status labels (`2xx`, `4xx`) as the Python instrumentator.
-- **`vllm:cache_config_info` was not exported on v0.33.0**, so the "KV cache
-  pool" stat panel reads the `kv_pool_tokens` dashboard variable, copied
-  from the boot log. v0.34.0 does export it, with the pool in its
-  `kv_cache_size_tokens` label; the dashboard has not been switched over.
+- **`vllm:cache_config_info` is exported since v0.34.0**, without a
+  `model_name` label. The dashboard's `kv_pool_tokens` variable reads the
+  pool from its `kv_cache_size_tokens` label. On v0.33.0 the Rust frontend
+  did not export the metric and the value had to be copied from the boot
+  log.
 - **There is no per-request access log.** `scripts/bench-guard.sh` cannot see
   foreign clients and records `VERDICT: PASS-BLIND`; only its concurrency
   check guards a sweep.
@@ -185,11 +186,13 @@ follows the earlier 4-card recipe's dashboard with the model-specific parts
 changed:
 
 - the speculative-decoding row tracks MTP-3;
-- the "KV cache tokens in use" panel and the "KV cache pool (boot log)" stat
-  read a `kv_pool_tokens` dashboard variable (6,937,800 on the v0.34.0 boot)
-  instead of a hard-coded constant or `vllm:cache_config_info`. The dashboard
-  is provisioned read-only, so change it by editing the variable in the
-  JSON.
+- the "KV cache tokens in use" panel and the "KV cache pool" stat read a
+  `kv_pool_tokens` dashboard variable, which is a Prometheus query on
+  `vllm:cache_config_info` (label `kv_cache_size_tokens`), so it follows
+  whichever engine is running; the reference boot of this recipe reports
+  6,937,800. The query was checked against live Prometheus on the reference
+  box; the variable is empty, and both panels blank, while the engine is
+  down.
 
 The GPU row is unchanged: per-card power against the enforced limit, core
 temperature against the live HW-slowdown threshold, fan speed.
@@ -205,8 +208,8 @@ docker run --rm --entrypoint bash vllm/vllm-openai:<tag>@<digest> -c \
   'grep -rn indexed_attention /usr/local/lib/python3.12/dist-packages/vllm/models/qwen4_exp/'
 ```
 
-Boot it, check the lines from Quick start step 3, update `kv_pool_tokens`,
-and run a guarded sweep before trusting it. Keep the previous image until
+Boot it, check the lines from Quick start step 3 (the dashboard reads the
+new pool by itself), and run a guarded sweep before trusting it. Keep the previous image until
 the sweep passes.
 
 ## Documentation

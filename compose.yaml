@@ -150,8 +150,7 @@ services:
     # --gpu-memory-utilization 0.95  (local addition; no render has it)
     #   The recipe guide says to leave this unset unless the GPUs are shared.
     #   It is kept because every measured boot of this stack ran with it --
-    #   changing or dropping it moves the KV pool, which then needs
-    #   kv_pool_tokens re-read from the boot log. Since v0.34.0 the KV cache
+    #   changing or dropping it moves the KV pool. Since v0.34.0 the KV cache
     #   is sized from the memory free after warmup ("extensible KV cache"),
     #   the flag's default is 1.0, and the boot warns that 0.95 "caps this
     #   instance at 90.31 GiB, keeping 2.63 GiB of free device memory out of
@@ -164,7 +163,8 @@ services:
     #   7,076,500 (2026-11-10) and 7,077,888 / 27.00x (2026-11-12, -13) from
     #   53.79 GiB: the new release holds about 2% fewer tokens in slightly
     #   more memory. The pool also moves slightly between identical boots;
-    #   the dashboard's kv_pool_tokens variable tracks the current boot.
+    #   the dashboard's kv_pool_tokens variable reads the current value from
+    #   vllm:cache_config_info.
     #
     # --max-model-len is deliberately absent: vLLM then uses the checkpoint's
     #   native 262,144 tokens (recipe "Full native context").
