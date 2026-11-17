@@ -124,38 +124,12 @@ Grafana is at <http://127.0.0.1:3000>, Prometheus at <http://127.0.0.1:9090>.
 > elsewhere, tunnel rather than rebinding:
 > `ssh -L 8000:127.0.0.1:8000 -L 3000:127.0.0.1:3000 <gpu-host>`
 
-## 1M context variant
-
-`compose.1m.yaml` redefines only the engine service, identical to
-`compose.yaml` except for two added flags: `--max-model-len 1048576` and an
-`--hf-overrides` YaRN (factor 4) RoPE extension of the checkpoint's native
-262,144. The plain length flag cannot stand alone — the checkpoint ships
-`rope_type: "default"`, so vLLM derives a 262,144 ceiling from it and rejects
-1M; the override must nest under `text_config` (a top-level one is ignored by
-the text path). The served model name, ports and monitoring are unchanged, so
-clients and the dashboard need no edits. Switch commands are in the file's
-header; it shares compose.yaml's project, so the two engine definitions are
-mutually exclusive — as they must be on four cards.
-
-**Not booted, not benchmarked.** The full flag set was validated without a
-boot by a CPU dry run of `EngineArgs.create_engine_config` inside the pinned
-image (2026-11-15; evidence and the exact shape rationale in
-`compose.1m.yaml`'s comments). On the first boot, run Quick start step 3 and
-check two more things: `non-default args` must contain `max_model_len=1048576`
-and the `hf_overrides` dict, and the `speculative_config=` line is where the
-MTP draft's effective context length shows up (the dry run's draft config
-still carried 262,144; vLLM pushes the target length to the draft only at
-engine build). At the ~7.08M-token KV pool the ceiling is ~6.7 concurrent
-full-1M requests instead of 27.0x at native length. Quality at 4x YaRN is
-unmeasured on this hardware — no claim here without a guarded sweep recorded
-in [docs/benchmarks.md](docs/benchmarks.md).
-
 ## What you get
 
 | | |
 |---|---|
 | Endpoint | OpenAI-compatible, `http://127.0.0.1:8000/v1`, served as `Qwen3.8-Flash-Next-FP8` |
-| Context | 262,144 tokens (checkpoint native; `--max-model-len` is left unset as in the recipe); [1M variant](#1m-context-variant) |
+| Context | 262,144 tokens (checkpoint native; `--max-model-len` is left unset as in the recipe) |
 | Concurrency | `--max-num-seqs 16`, `--max-num-batched-tokens 8192` |
 | Tool calling | Auto tool choice, `qwen3_coder` parser |
 | Reasoning | Split into `reasoning_content` (`qwen3` reasoning parser) |
