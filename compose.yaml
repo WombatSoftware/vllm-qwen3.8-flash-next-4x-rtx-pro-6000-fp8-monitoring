@@ -25,17 +25,18 @@ name: qwen-3-8-flash-next-fp8
 
 services:
   qwen-3-8-flash-next-fp8:
-    # Bare upstream release, pinned by its manifest-list DIGEST -- the same
-    # image the single-GPU Qwen3.8 recipe runs. The recipe
-    # needs vLLM >= 0.30.0 and is "tuned and verified on nightly"; v0.33.0 is
-    # pinned instead because a digest cannot move. Checked inside this image
-    # (CPU-only, no boot): it ships the vllm-rs Rust frontend binary,
-    # AttentionConfig.indexer_kv_dtype, the qwen3_coder tool parser, the qwen3
-    # reasoning parser, the qwen4_exp model with the indexed_attention fix
-    # (PR #59621), and EngramConfig.cpu_offload defaulting to True.
+    # Bare upstream release, pinned by its manifest-list DIGEST. The recipe
+    # needs vLLM >= 0.30.0 and is "tuned and verified on nightly"; a release
+    # is pinned instead because a digest cannot move. Moved from v0.33.0 to
+    # v0.34.0 on 2026-11-17 (boot and function checks in docs/benchmarks.md;
+    # no sweep). Checked inside this image (CPU-only, no boot): it ships the
+    # vllm-rs Rust frontend binary, AttentionConfig.indexer_kv_dtype, the
+    # qwen3_coder tool parser, the qwen3 reasoning parser, the qwen4_exp
+    # model with the indexed_attention fix (PR #59621), and
+    # EngramConfig.cpu_offload defaulting to True.
     # With pull_policy: never a compose recreate can never silently move the
     # base; pull it once by hand (README step 1). CUDA 13 only (#62575).
-    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    image: vllm/vllm-openai:v0.34.0@sha256:20fdb089454afbb324efa4110a2c025ff7b27cc1a086e07aa580b18df8ad1ce1
     pull_policy: never
     container_name: qwen-3-8-flash-next-fp8
     # On a box whose GPUs other stacks share, set RESTART_POLICY=no in .env so
@@ -59,9 +60,9 @@ services:
       # From the recipe. The image ENTRYPOINT is `vllm serve`, which reads this
       # and hands HTTP to the vllm-rs binary instead of the Python API server.
       # Consequences for this repo (README "Rust frontend"): /metrics is served
-      # by Rust and carries every vllm:* metric the dashboard uses except
-      # vllm:cache_config_info, and there is no per-request access log, so
-      # bench-guard.sh reports PASS-BLIND.
+      # by Rust and carries every vllm:* metric the dashboard uses (since
+      # v0.34.0 including vllm:cache_config_info), and there is no
+      # per-request access log, so bench-guard.sh reports PASS-BLIND.
       VLLM_USE_RUST_FRONTEND: "1"
       HF_TOKEN: "${HF_TOKEN:-}"
       # Weight load + MTP head + compile across 4 ranks; the default
@@ -93,7 +94,8 @@ services:
       timeout: 10s
       retries: 3
       # A first boot downloads the 172.78 GiB checkpoint before it can answer.
-      # First boot with weights already cached: 191 s to healthy (2026-11-10).
+      # Boot with weights already cached: 191 s to healthy on v0.33.0
+      # (2026-11-10), 210 s on v0.34.0 (2026-11-17).
       start_period: 3600s
     # Bare args: the image ENTRYPOINT is already `vllm serve`. Never prefix
     # them with `vllm serve`.
@@ -149,13 +151,20 @@ services:
     #   The recipe guide says to leave this unset unless the GPUs are shared.
     #   It is kept because every measured boot of this stack ran with it --
     #   changing or dropping it moves the KV pool, which then needs
-    #   kv_pool_tokens re-read from the boot log.
+    #   kv_pool_tokens re-read from the boot log. Since v0.34.0 the KV cache
+    #   is sized from the memory free after warmup ("extensible KV cache"),
+    #   the flag's default is 1.0, and the boot warns that 0.95 "caps this
+    #   instance at 90.31 GiB, keeping 2.63 GiB of free device memory out of
+    #   the KV cache". Dropping the flag would hand that memory to KV; it
+    #   has not been tried here.
     #
-    # Boot line: first boot (2026-11-10) reported "GPU KV cache size:
-    #   7,076,500 tokens, Maximum concurrency for 262,144 tokens per request:
-    #   26.99x"; the 2026-11-12 and 2026-11-13 boots reported 7,077,888 /
-    #   27.00x. The pool moves slightly between identical boots; the
-    #   dashboard's kv_pool_tokens variable tracks the current boot.
+    # Boot line, v0.34.0 (2026-11-17): "GPU KV cache size: 6,937,800 tokens,
+    #   Maximum concurrency for 262,144 tokens per request: 26.47x", with
+    #   55.15 GiB of KV memory per card. On v0.33.0 the same flags reported
+    #   7,076,500 (2026-11-10) and 7,077,888 / 27.00x (2026-11-12, -13) from
+    #   53.79 GiB: the new release holds about 2% fewer tokens in slightly
+    #   more memory. The pool also moves slightly between identical boots;
+    #   the dashboard's kv_pool_tokens variable tracks the current boot.
     #
     # --max-model-len is deliberately absent: vLLM then uses the checkpoint's
     #   native 262,144 tokens (recipe "Full native context").
@@ -169,11 +178,15 @@ services:
     #   host RAM: every boot logs "Resolved Engram configuration:
     #   EngramConfig(cpu_offload=True, ...)" and, per worker, "ngram_embedding
     #   ... weight_device=cpu, pinned=True"; the running engine container
-    #   holds ~83 GiB of host RAM (measured 2026-11-14, 122 GiB host). The
+    #   holds ~83 GiB of host RAM (measured 2026-11-14 on v0.33.0, 122 GiB
+    #   host; 76.5 GiB by `docker stats` on the v0.34.0 boot). The
     #   recipe calls offload optional only on GPUs with more VRAM per rank
     #   than H200; these have 96 GB. Needs at least 51 GB of free host RAM
     #   plus headroom. To make it explicit, add --engram-config
-    #   '{"cpu_offload":true}'.
+    #   '{"cpu_offload":true}'. v0.34.0 adds '{"disk_offload":true}', which
+    #   leaves the table in the checkpoint files and reads rows per step
+    #   instead of pinning it in RAM; it is NOT set in this recipe and its
+    #   throughput cost is unmeasured.
     #
     # --speculative-config method mtp, k=3
     #   The checkpoint's built-in MTP head; the recipe's spec_decoding feature.

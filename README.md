@@ -16,7 +16,14 @@ dashboard follow an earlier recipe written for the same four cards.
 
 ## Status
 
-**Booted, not yet benchmarked.** First boot on the reference box
+**Booted, not yet benchmarked.** The engine pin moved from v0.33.0 to
+v0.34.0 on 2026-11-17: healthy in 210 s, KV pool **6,937,800 tokens =
+26.47x** one 262,144-token request, chat, reasoning split, tool calls
+(streaming and not) and every dashboard metric checked, MTP acceptance
+length 2.32–2.42 on four single requests from 2,855 to 261,200 prompt
+tokens. No sweep was run on either release. The history below is v0.33.0.
+
+First boot on the reference box
 (2026-11-10, 4x RTX PRO 6000 Max-Q, weights pre-downloaded, empty compile
 caches) reached `/health` in **191 s** and reported a KV pool of
 **7,076,500 tokens = 26.99x** one 262,144-token request. A tool call came
@@ -37,7 +44,7 @@ the sweep to run.
   `--host`, `--port`, `--chat-template` and `--gpu-memory-utilization 0.95`
   are added; the last is a local choice, not part of the render (the recipe
   leaves the flag unset).
-- **A pinned release engine** — the bare upstream vLLM v0.33.0 image, pinned
+- **A pinned release engine** — the bare upstream vLLM v0.34.0 image, pinned
   by digest. The recipe asks for ≥ 0.30.0 and is tuned on nightly; a digest
   pin is preferred over a moving `nightly` tag (see
   [Moving the pin](#moving-the-pin)).
@@ -57,7 +64,7 @@ the sweep to run.
 | | |
 |---|---|
 | GPUs | **4x** RTX PRO 6000 Blackwell, 96 GB each. The reference box has the 300 W Max-Q edition over PCIe. |
-| Driver | CUDA 13 capable (v0.33.0 images are CUDA 13 only). |
+| Driver | CUDA 13 capable (v0.34.0 images are CUDA 13 only). Booted on driver 615.71.09. |
 | Host RAM | **≥ 51 GB free plus headroom** for the 51B N-gram embedding table, which vLLM offloads to pinned host RAM by default (recipe; this stack's boot logs confirm `EngramConfig(cpu_offload=True)` and a pinned CPU-resident table, and the running engine container holds ~83 GiB of host RAM on the 122 GiB reference box). |
 | Disk | ~173 GiB for the checkpoint in the Hugging Face cache. |
 | Software | Docker with Compose v2 and the NVIDIA Container Toolkit. |
@@ -77,7 +84,7 @@ cp .env.example .env && $EDITOR .env      # set a Grafana password
 **1. Pull the engine image** on the GPU host:
 
 ```bash
-docker pull vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+docker pull vllm/vllm-openai:v0.34.0@sha256:20fdb089454afbb324efa4110a2c025ff7b27cc1a086e07aa580b18df8ad1ce1
 ```
 
 `compose.yaml` uses `pull_policy: never`, so this step is not optional.
@@ -134,7 +141,7 @@ Grafana is at <http://127.0.0.1:3000>, Prometheus at <http://127.0.0.1:9090>.
 | Tool calling | Auto tool choice, `qwen3_coder` parser |
 | Reasoning | Split into `reasoning_content` (`qwen3` reasoning parser) |
 | Speculative decoding | MTP, 3 draft tokens |
-| KV cache | fp8, plus fp8 for the sparse-attention indexer cache; 7,077,888-token pool (27.00x; 7,076,500 on the 2026-11-10 first boot) |
+| KV cache | fp8, plus fp8 for the sparse-attention indexer cache; 6,937,800-token pool (26.47x) on v0.34.0; v0.33.0 reported 7,077,888 (27.00x) |
 | Monitoring | Prometheus scraping vLLM and a GPU exporter (all four cards), Grafana with a 30-panel dashboard in 8 rows, provisioned |
 
 ## The chat template
@@ -155,14 +162,15 @@ would then arrive as plain text in `content`.
 
 `VLLM_USE_RUST_FRONTEND=1` makes `vllm serve` run the `vllm-rs` binary as
 the HTTP server instead of the Python API server. The dashboard was built
-against the Python frontend; on the first boot:
+against the Python frontend:
 
 - **Engine and HTTP metrics are there.** Every `vllm:*` metric the dashboard
   queries is exported, and `http_requests_total{method,status,handler}` uses
   the same grouped status labels (`2xx`, `4xx`) as the Python instrumentator.
-- **`vllm:cache_config_info` is not exported.** The "KV cache pool" stat
-  panel therefore reads the `kv_pool_tokens` dashboard variable, copied from
-  the boot log.
+- **`vllm:cache_config_info` was not exported on v0.33.0**, so the "KV cache
+  pool" stat panel reads the `kv_pool_tokens` dashboard variable, copied
+  from the boot log. v0.34.0 does export it, with the pool in its
+  `kv_cache_size_tokens` label; the dashboard has not been switched over.
 - **There is no per-request access log.** `scripts/bench-guard.sh` cannot see
   foreign clients and records `VERDICT: PASS-BLIND`; only its concurrency
   check guards a sweep.
@@ -178,7 +186,7 @@ changed:
 
 - the speculative-decoding row tracks MTP-3;
 - the "KV cache tokens in use" panel and the "KV cache pool (boot log)" stat
-  read a `kv_pool_tokens` dashboard variable (7,077,888 on the current boot)
+  read a `kv_pool_tokens` dashboard variable (6,937,800 on the v0.34.0 boot)
   instead of a hard-coded constant or `vllm:cache_config_info`. The dashboard
   is provisioned read-only, so change it by editing the variable in the
   JSON.

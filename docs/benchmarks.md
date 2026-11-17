@@ -1,6 +1,27 @@
 # Benchmarks
 
-**No throughput results recorded yet.** First boot on the reference box
+**No throughput results recorded yet.**
+
+Pin moved to v0.34.0 (2026-11-17), boot and function checks only, no sweep:
+
+| | v0.34.0 | v0.33.0 |
+|---|---|---|
+| Boot to `/health`, weights cached | 210 s | 191 s |
+| `GPU KV cache size` | 6,937,800 tokens (26.47x) | 7,077,888 (27.00x) |
+| KV memory per card | 55.15 GiB | 53.79 GiB |
+| Weights + non-torch per card | 34.07 GiB | 34.85 GiB |
+| Engine container host RAM | 76.5 GiB (`docker stats`) | 83 GiB |
+
+On v0.34.0, one request each at temperature 0 with thinking off (a list of
+numbered records, "output the code of record N, then write an essay"):
+2,855 / 89,414 / 223,286 / 261,200 prompt tokens gave MTP acceptance lengths
+of 2.32 / 2.38 / 2.42 / 2.34 from `/metrics` counter deltas, and the right
+record code every time. A prompt over 262,144 tokens is rejected with HTTP
+400. Chat, the reasoning split, and tool calls (streaming and not) passed;
+all 29 `vllm:*` metric names the dashboard queries are exported. Four
+requests are not a benchmark.
+
+The rest of this section is the v0.33.0 history. First boot on the reference box
 (2026-11-10): healthy in 191 s with the weights pre-downloaded, KV pool
 7,076,500 tokens (26.99x at 262,144), so four 131k requests (524,288 tokens)
 fit in the pool by arithmetic (preemption not yet observed either way). The Rust frontend writes no access log, so the guard
@@ -25,7 +46,7 @@ representative.
 |---|---|
 | GPUs | 4x NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 96 GB each, 300 W limit, PCIe (no NVLink) |
 | Checkpoint | `Qwen/Qwen3.8-Flash-Next-FP8` |
-| Engine | vLLM v0.33.0 (the digest pin in `compose.yaml`), bare upstream image, Rust frontend |
+| Engine | vLLM v0.34.0 (the digest pin in `compose.yaml`), bare upstream image, Rust frontend |
 | Tool | llama-benchy, 3 runs per cell, under `scripts/bench-guard.sh` |
 
 The same box hosts the other engine recipe for these cards; the two cannot

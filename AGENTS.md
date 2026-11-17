@@ -14,7 +14,7 @@ The engine flags are the vLLM recipe's rendered command for
 `--served-model-name`, `--host` and `--port`. The comments in `compose.yaml`
 are load-bearing. Do not "tidy" them away.
 
-The engine is the bare upstream v0.33.0 release image, pinned by digest. There
+The engine is the bare upstream v0.34.0 release image, pinned by digest. There
 is no Dockerfile and no fork.
 
 **Booted, not benchmarked.** `docs/benchmarks.md` has no throughput results.
@@ -60,11 +60,13 @@ Do not add performance claims to any file without a guarded sweep behind them.
 
 ## Restarting the engine
 
-The first boot (weights pre-downloaded, empty compile caches) took 191 s to
-healthy. A first boot that has to download the 172.78 GiB checkpoint takes far
-longer, which is why `start_period` is 3600 s. Expect a pool of roughly
-7,077,000 tokens (7,076,500 at the first boot; 7,077,888 on the 2026-11-12
-and 2026-11-13 boots — the pool drifts slightly between identical boots).
+A boot with the weights pre-downloaded takes about 3.5 minutes to healthy
+(210 s on v0.34.0, 191 s on v0.33.0). A first boot that has to download the
+172.78 GiB checkpoint takes far longer, which is why `start_period` is
+3600 s. Expect a pool of roughly 6,940,000 tokens on v0.34.0 (6,937,800 on
+the 2026-11-17 boot; v0.33.0 reported 7,076,500 to 7,077,888 — the pool
+drifts slightly between identical boots and moved about 2% with the
+release).
 
 ```bash
 docker compose up -d qwen-3-8-flash-next-fp8
@@ -91,8 +93,10 @@ re-reads the weights and re-pins the N-gram table in host RAM.
   variable's `query`/`current` in the JSON to the boot's `GPU KV cache size`.
 - Do not reintroduce hard-coded `model_name` literals; panels bind to
   `$model_name`.
-- `vllm:cache_config_info` is a Python-frontend metric and is absent from the
-  `vllm-rs` binary. Do not "fix" its empty panel by guessing values.
+- `vllm:cache_config_info` was absent from the `vllm-rs` binary on v0.33.0
+  and is exported on v0.34.0 (pool in its `kv_cache_size_tokens` label).
+  The panels still read `kv_pool_tokens`; switching them is a dashboard
+  change to make and verify on its own, not a value to guess.
 
 ## Benchmarking
 
